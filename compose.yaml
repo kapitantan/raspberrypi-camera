@@ -1,0 +1,14 @@
+services:
+
+  nodegemini:
+    image: node:lts
+    container_name: raspberyypi-camera-gemini
+    tty: true
+    volumes:
+    - ./app:/workspace/app
+    # - ./work:/workspace/work
+    - ./update-notifier-@google:/root/.config/configstore/update-notifier-@google
+    - ./.gemini:/root/.gemini
+    command: >
+      sh -c "npm install -g @google/gemini-cli --force-immutable --no-update-notifier && bash"
+    working_dir: /workspace
