@@ -5,3 +5,4 @@ fastapi
 Pillow
 torchvision
 python-multipart
+matplotlib
