@@ -1,6 +1,6 @@
 services:
 
-  nodegemini:
+  raspicameragemini:
     image: node:lts
     container_name: raspberyypi-camera-gemini
     tty: true
