@@ -4,6 +4,7 @@ import os
 import threading
 import time
 from datetime import datetime
+import requests 
 
 import uvicorn
 from fastapi import FastAPI, Response
@@ -20,6 +21,8 @@ except ImportError:
     print("必要なライブラリをインストールしてください: pip install picamera2")
     print("="*50)
     exit()
+
+GPU_SERVER_URL = "http://100.112.227.64:8000/api/detect"  
 
 # ストリーミング用のバッファークラス
 # カメラからのフレームを保持し、新しいフレームが来たら通知する役割
@@ -131,10 +134,61 @@ def camera_stream():
     """
     return StreamingResponse(generate_frames(), media_type='multipart/x-mixed-replace; boundary=frame')
 
+MAX_FILES = 10  # 保存する画像ファイルの数（上書きループ）
+def send_loop(interval_sec: int = 5):
+    """
+    数秒ごとに最新フレームをGPUサーバーに送るバックグラウンドループ。
+    保存は 0〜9 の10ファイルをローテーションで上書きする。
+    """
+    idx = 0  # 0〜MAX_FILES-1 をループ
+
+    while True:
+        time.sleep(interval_sec)
+
+        # 最新フレームを取得（ロックを取りながらコピー）
+        with output.condition:
+            frame = output.frame
+        # テスト用
+        # try:
+        #     with open('test.jpg','rb') as f:
+        #         frame = f.read()
+        # except FileNotFoundError:
+        #     print("test.jpg が見つかりません。送信をスキップします。")
+        #     continue
+
+        if frame is None:
+            print("まだフレームが来ていないのでスキップ")
+            continue
+
+        # JPEGバイト列をサーバーに送信
+        files = {
+            "file": ("frame.jpg", frame, "image/jpeg")
+        }
+
+        try:
+            resp = requests.post(GPU_SERVER_URL, files=files, timeout=30)
+            resp.raise_for_status()
+        except Exception as e:
+            print("GPUサーバーへの送信に失敗:", e)
+            continue
+
+        # ★ 10ファイルを上書きで回す
+        result_path = f"result_{idx}.jpg"
+        with open(result_path, "wb") as f:
+            f.write(resp.content)
+
+        print(f"推論結果を {result_path} に保存（上書きローテーション）")
+
+        idx = (idx + 1) % MAX_FILES
+
 
 if __name__ == "__main__":
     # カメラをバックグラウンドで起動
     picam2.start()
+
+    # GPUサーバーに送るバックグラウンドスレッドを起
+    sender_thread = threading.Thread(target=send_loop, kwargs={"interval_sec": 5}, daemon=True)
+    sender_thread.start()
     
     # Uvicornサーバーを起動
     # この時点では、カメラは既に映像を生成し始めています
