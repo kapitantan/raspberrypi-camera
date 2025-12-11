@@ -1,4 +1,4 @@
-# server_node.py
+ # server_node.py
 import io
 
 import cv2
@@ -14,7 +14,10 @@ from fastapi.responses import FileResponse
 from pathlib import Path
 import os
 from fastapi import HTTPException
+import requests
+from dotenv import load_dotenv   
 
+load_dotenv()  # .envファイルから環境変数を読み込む
 app = FastAPI()
 # DeepLabV3 + ResNet50（COCOデータセットで学習済み）を読み込み 推論モードに設定
 model = deeplabv3_resnet50(pretrained=True).eval()
@@ -52,6 +55,11 @@ async def detect(file: UploadFile = File(...)):
     h0, w0 = np_img.shape[:2]
     # mask を元画像サイズに拡大/縮小,最近傍補間（INTER_NEAREST）を使うことでクラス境界がぼけません
     mask_up = cv2.resize(mask, (w0, h0), interpolation=cv2.INTER_NEAREST)    
+    # 人間感知を判断
+    person_pixels = int((mask_up == 255).sum())
+    human_detected = person_pixels > 0
+    print(f"person_pixels = {person_pixels}, human_detected = {human_detected}")
+    # オーバーレイ画像作成
     overlay = np_img.copy()
     overlay[mask_up == 255] = [0, 0, 255]  # ここが上書き色（BGRで青）
     # ブレンド合成
@@ -60,6 +68,10 @@ async def detect(file: UploadFile = File(...)):
     _, jpeg = cv2.imencode(".jpg", blended)
     with open("result.jpg", "wb") as f:
         f.write(jpeg.tobytes())
+    
+    # Discord通知
+    if human_detected:
+        send_discord_notification(message="人を検知しました（GPUサーバーから）")
     res = FileResponse(
         path=Path("result.jpg"),
         media_type="image/jpeg",
@@ -77,6 +89,24 @@ def get_test_img():
         media_type="image/jpeg",
         filename="test.jpg",
     )
+
+def send_discord_notification(message: str):
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+    if not webhook_url:
+        raise ValueError("DISCORD_WEBHOOK_URL is not set in environment variables.")
+
+    data = {
+        "content": message
+    }
+    try:
+        response = requests.post(webhook_url, json=data)
+    except requests.RequestException as e:
+        raise Exception(f"Failed to send notification: {e}")
+
+    if response.status_code != 204:
+        raise Exception(f"Failed to send notification: {response.status_code}, {response.text}")
+    return response
+
 if __name__ == "__main__":
     # uvicorn server_node:app --host 0.0.0.0 --port 8080
     uvicorn.run(app, host="0.0.0.0", port=8000)
