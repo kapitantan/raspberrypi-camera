@@ -16,6 +16,7 @@ import os
 from fastapi import HTTPException
 import requests
 from dotenv import load_dotenv   
+import json
 
 load_dotenv()  # .envファイルから環境変数を読み込む
 app = FastAPI()
@@ -71,7 +72,10 @@ async def detect(file: UploadFile = File(...)):
     
     # Discord通知
     if human_detected:
-        send_discord_notification(message="人を検知しました（GPUサーバーから）")
+        print('人を検知しました。Discordに通知を送信します。')
+        send_discord_notification(
+            message="人を検知しました（GPUサーバーから）",
+            image_path="result.jpg")
     res = FileResponse(
         path=Path("result.jpg"),
         media_type="image/jpeg",
@@ -90,21 +94,38 @@ def get_test_img():
         filename="test.jpg",
     )
 
-def send_discord_notification(message: str):
+def send_discord_notification(message: str, image_path: str | Path | None = None):
     webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
     if not webhook_url:
         raise ValueError("DISCORD_WEBHOOK_URL is not set in environment variables.")
+    # 画像付きの場合
+    if image_path is not None:
+        image_path = Path(image_path)
 
-    data = {
-        "content": message
-    }
-    try:
-        response = requests.post(webhook_url, json=data)
-    except requests.RequestException as e:
-        raise Exception(f"Failed to send notification: {e}")
-
-    if response.status_code != 204:
+        if not image_path.exists():
+            raise FileNotFoundError(f"Image file not found: {image_path}")
+        payload = {
+            "content": message
+        }
+        with image_path.open("rb") as f:
+            files = {
+                # "file" という名前でファイルを送る
+                "file": (image_path.name, f, "image/jpeg"),
+            }
+            # payload_json に JSON 文字列として content を入れる
+            response = requests.post(
+                webhook_url,
+                data={"payload_json": json.dumps(payload)},
+                files=files,
+            )
+    else:
+        # テキストのみの場合（今まで通り）
+        payload = {"content": message}
+        response = requests.post(webhook_url, json=payload)
+    # 画像付きだと 200、テキストだけだと 204 が返ることがある
+    if response.status_code not in (200, 204):
         raise Exception(f"Failed to send notification: {response.status_code}, {response.text}")
+
     return response
 
 if __name__ == "__main__":
