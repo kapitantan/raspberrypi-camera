@@ -5,6 +5,8 @@ import threading
 import time
 from datetime import datetime
 import requests 
+from dotenv import load_dotenv   
+
 
 import uvicorn
 from fastapi import FastAPI, Response
@@ -23,6 +25,8 @@ except ImportError:
     exit()
 
 GPU_SERVER_URL = "http://100.112.227.64:8000/api/detect"  
+load_dotenv()
+API_KEY = os.getenv("API_KEY")
 
 # ストリーミング用のバッファークラス
 # カメラからのフレームを保持し、新しいフレームが来たら通知する役割
@@ -164,9 +168,12 @@ def send_loop(interval_sec: int = 5):
         files = {
             "file": ("frame.jpg", frame, "image/jpeg")
         }
+        headers = {
+            "X-API-Key": API_KEY,
+        }
 
         try:
-            resp = requests.post(GPU_SERVER_URL, files=files, timeout=30)
+            resp = requests.post(GPU_SERVER_URL, files=files, headers=headers, timeout=30)
             resp.raise_for_status()
         except Exception as e:
             print("GPUサーバーへの送信に失敗:", e)
@@ -187,7 +194,7 @@ if __name__ == "__main__":
     picam2.start()
 
     # GPUサーバーに送るバックグラウンドスレッドを起
-    sender_thread = threading.Thread(target=send_loop, kwargs={"interval_sec": 5}, daemon=True)
+    sender_thread = threading.Thread(target=send_loop, kwargs={"interval_sec": 0.6}, daemon=True)
     sender_thread.start()
     
     # Uvicornサーバーを起動

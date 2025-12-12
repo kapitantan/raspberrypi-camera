@@ -5,7 +5,7 @@ import cv2
 import numpy as np
 import torch
 import uvicorn
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, UploadFile, HTTPException,Header, status, Depends
 from fastapi.responses import StreamingResponse
 from PIL import Image
 from torchvision import transforms
@@ -13,7 +13,6 @@ from torchvision.models.segmentation import deeplabv3_resnet50
 from fastapi.responses import FileResponse
 from pathlib import Path
 import os
-from fastapi import HTTPException
 import requests
 from dotenv import load_dotenv   
 import json
@@ -30,8 +29,30 @@ transform = transforms.Compose([
                          std=[0.229, 0.224, 0.225])
 ])
 
+API_KEY_HEADER_NAME = "X-API-Key"
+def get_api_key(x_api_key: str = Header(..., alias=API_KEY_HEADER_NAME)):
+    """
+    X-API-Key ヘッダを検証する dependency。
+    不一致なら 401 を投げる。
+    """
+    API_KEY = os.getenv("API_KEY")
+    if API_KEY is None:
+        # サーバー側の設定ミスは 500 にしておく
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="API key is not configured on server",
+        )
+    if x_api_key != API_KEY:
+        # ここで 401 を返す
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing API key",
+        )
+    return x_api_key
+
 @app.post("/api/detect")
-async def detect(file: UploadFile = File(...)):
+async def detect(file: UploadFile = File(...), 
+                 api_key: str = Depends(get_api_key)):
     """
     画像を受け取ると、人を検出して色のマスクを重ねた画像を返す
     """
