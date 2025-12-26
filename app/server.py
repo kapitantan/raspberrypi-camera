@@ -74,6 +74,7 @@ async def detect(file: UploadFile = File(...),
     mask = (preds == 15).astype(np.uint8) * 255
     # 元画像にオーバーレイ
     np_img = np.array(img)  # 元画像サイズのまま
+    bgr = cv2.cvtColor(np_img, cv2.COLOR_RGB2BGR)
     h0, w0 = np_img.shape[:2]
     # mask を元画像サイズに拡大/縮小,最近傍補間（INTER_NEAREST）を使うことでクラス境界がぼけません
     mask_up = cv2.resize(mask, (w0, h0), interpolation=cv2.INTER_NEAREST)    
@@ -83,11 +84,11 @@ async def detect(file: UploadFile = File(...),
     print(f"person_pixels = {person_pixels}, human_detected = {human_detected}")
     # オーバーレイ画像作成
     overlay = np_img.copy()
-    overlay[mask_up == 255] = [0, 0, 255]  # ここが上書き色（BGRで青）
+    overlay[mask_up == 255] = [0, 0, 1]  # ここが上書き色（BGR）
     # ブレンド合成
-    blended = cv2.addWeighted(np_img, 0.6, overlay, 0.4, 0)
+    blended = cv2.addWeighted(np_img, 0.6, overlay, 0.4, 1)
     # 8. JPEGエンコードして保存（StreamingResponseの代わりに保存）
-    _, jpeg = cv2.imencode(".jpg", blended)
+    _, jpeg = cv2.imencode(".jpg", bgr)
     with open("result.jpg", "wb") as f:
         f.write(jpeg.tobytes())
     
